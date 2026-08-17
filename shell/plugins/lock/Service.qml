@@ -43,6 +43,20 @@ Item {
 
   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
   readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating || faceAuthenticating
+
+  // A burst runs from its first attempt to its last, retry gaps included.
+  // `faceAuthenticating` drops between attempts, so anything gated on that
+  // instead flickers off and back on mid-scan.
+  readonly property bool faceScanning: faceAttemptCount > 0
+
+  // What may hold the display up, which is not the same as what counts as
+  // authenticating. Fingerprint is excluded because its PAM stays armed for the
+  // whole lock, so gating on it would keep the panel lit until unlock. Face is
+  // included because a burst is bounded and the user is waiting on it, and it
+  // can outlast the five second blank timer, so without this the panel goes
+  // black mid-scan.
+  readonly property bool blockingBlank: authenticatingPassword || faceScanning
+
   readonly property int faceAttemptLimit: 3
   readonly property int faceRetryDelay: 250
   readonly property int faceActivityDebounce: 750
@@ -565,10 +579,10 @@ Item {
         root.armBlankTimer()
         return
       }
-      // Only a password check in flight should hold the display up. The
+      // Only a bounded check in flight should hold the display up. The
       // fingerprint PAM stays armed for the whole lock, so gating on
       // `authenticating` here would keep the panel lit until unlock.
-      if (root.lockRequested && !root.authenticatingPassword) root.runBlank()
+      if (root.lockRequested && !root.blockingBlank) root.runBlank()
     }
   }
 
@@ -625,9 +639,9 @@ Item {
     }
   }
 
-  onAuthenticatingPasswordChanged: {
+  onBlockingBlankChanged: {
     if (!lockRequested) return
-    if (authenticatingPassword) idleBlankTimer.stop()
+    if (blockingBlank) idleBlankTimer.stop()
     else armBlankTimer()
   }
 

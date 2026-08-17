@@ -12,8 +12,18 @@ const serviceQml = fs.readFileSync(path.join(root, 'shell/plugins/lock/Service.q
 // `authenticating` is true from lock until unlock on every machine with a
 // reader enrolled. Gating the blank on it leaves the panel lit all night.
 assert(
-  /if \(root\.lockRequested && !root\.authenticatingPassword\) root\.runBlank\(\)/.test(serviceQml),
-  'only a password check in flight stops the blank timer from blanking'
+  /readonly property bool faceScanning: faceAttemptCount > 0/.test(serviceQml),
+  'a burst spans the retry gaps, so the timer cannot re-arm between attempts'
+)
+
+assert(
+  /readonly property bool blockingBlank: authenticatingPassword \|\| faceScanning/.test(serviceQml),
+  'only password entry and a face burst hold the display up, never fingerprint'
+)
+
+assert(
+  /if \(root\.lockRequested && !root\.blockingBlank\) root\.runBlank\(\)/.test(serviceQml),
+  'only a bounded check in flight stops the blank timer from blanking'
 )
 
 assert(
@@ -22,8 +32,8 @@ assert(
 )
 
 assert(
-  /onAuthenticatingPasswordChanged: \{\s*if \(!lockRequested\) return\s*if \(authenticatingPassword\) idleBlankTimer\.stop\(\)\s*else armBlankTimer\(\)/.test(serviceQml),
-  'the blank timer is held off by password entry and re-armed when it finishes'
+  /onBlockingBlankChanged: \{\s*if \(!lockRequested\) return\s*if \(blockingBlank\) idleBlankTimer\.stop\(\)\s*else armBlankTimer\(\)/.test(serviceQml),
+  'the blank timer is held off by a bounded check and re-armed when it finishes'
 )
 
 assert(
