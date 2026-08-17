@@ -24,6 +24,11 @@ Item {
   property bool passwordPamConfigured: false
   property bool fingerprintConfigured: false
   property bool faceConfigured: false
+  // What the field says about the camera. Deliberately separate from
+  // `failureMessage`: that one paints the field red and reads as a rejected
+  // credential, and face runs on ambient activity rather than on a submission,
+  // so an empty room must not look like a failed unlock attempt.
+  property string faceStatus: ""
   property int faceAttemptCount: 0
   property double faceActivityEligibleAt: 0
   property bool lidClosedDuringLock: false
@@ -142,6 +147,7 @@ Item {
     faceRetryTimer.stop()
     faceAttemptCount = 0
     faceAuthenticating = false
+    faceStatus = ""
 
     // PamContext.abort() emits no completion, so cleanup cannot enter the
     // failure path and accidentally restart the camera.
@@ -311,6 +317,12 @@ Item {
     }
     if (facePam.active || faceAuthenticating) return
 
+    // Only on the first attempt of a burst: a retry keeps whatever the backend
+    // last said rather than flicking back to our own wording. A backend that
+    // says nothing at all -- facelock's conversation text is a config option --
+    // leaves this standing for the whole burst, which is the point of having it.
+    if (faceAttemptCount === 0) faceStatus = "Looking for your face…"
+
     faceAttemptCount += 1
     faceAuthenticating = true
 
@@ -326,6 +338,7 @@ Item {
     }
     if (succeeded) {
       faceAttemptCount = 0
+      faceStatus = ""
       finishUnlock()
       return
     }
@@ -334,7 +347,11 @@ Item {
       faceRetryTimer.restart()
     } else {
       // Three failures stop here; a later key, click, or touch may try again.
+      // Say so once, at the end of the burst rather than after each attempt,
+      // and leave it up: it is the only thing that explains why the camera
+      // stopped, and the next activation replaces it.
       faceAttemptCount = 0
+      faceStatus = "Face not recognized"
     }
   }
 
@@ -387,6 +404,7 @@ Item {
         backgroundPath: root.backgroundPath
         backgroundVersion: root.backgroundVersion
         faceConfigured: root.faceConfigured
+        faceStatus: root.faceStatus
         fingerprintConfigured: root.fingerprintConfigured
         authenticatingPassword: root.authenticatingPassword
         failureMessage: root.failureMessage
@@ -420,6 +438,7 @@ Item {
       backgroundPath: root.backgroundPath
       backgroundVersion: root.backgroundVersion
       faceConfigured: root.faceConfigured
+      faceStatus: ""
       fingerprintConfigured: root.fingerprintConfigured
       authenticatingPassword: false
       failureMessage: ""
@@ -477,6 +496,13 @@ Item {
     id: facePam
     config: "omarchy-lock-face"
     user: root.userName
+
+    // Whatever the backend says during the scan drives the field, so no wording
+    // here is tied to one implementation. Guarded on an attempt being in flight
+    // so a late message cannot overwrite the burst's closing text.
+    onMessageChanged: {
+      if (root.faceAuthenticating && message) root.faceStatus = message
+    }
 
     // PamContext follows errors with completed(Error); one handler avoids
     // consuming the same failed attempt twice.

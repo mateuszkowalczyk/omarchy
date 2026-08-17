@@ -9,6 +9,9 @@ Item {
   property string backgroundPath: ""
   property int backgroundVersion: 0
   property bool faceConfigured: false
+  // Whatever the lock service last heard from the face backend, or its own
+  // wording when the backend is quiet. Empty when no camera burst is running.
+  property string faceStatus: ""
   property bool fingerprintConfigured: false
   property bool authenticatingPassword: false
   property string failureMessage: ""
@@ -38,6 +41,14 @@ Item {
     : 1
   readonly property bool showPasswordCursor: inputEnabled && !authenticatingPassword && failureMessage.length === 0
   readonly property bool errorState: failureMessage.length > 0
+  // A password check owns the field outright while it runs. A rejected password
+  // outranks the camera next: the user submitted that and is owed the answer,
+  // whereas a face burst starts on its own and can wait its turn. `errorState`
+  // stays keyed to the password alone, so the field never turns red for a face
+  // that simply was not there.
+  readonly property string fieldStatusText: authenticatingPassword
+    ? "Checking…"
+    : (errorState ? failureMessage : (faceStatus.length > 0 ? faceStatus : placeholderText))
   readonly property var inputBorderSpec: errorState
     ? Border.surfaceSpec("lock", "border-error", Color.lock.borderError, root.outlineThickness, "border-alpha")
     : Border.surfaceSpec("lock", "border-active", Color.lock.borderActive, root.outlineThickness, "border-alpha")
@@ -198,12 +209,14 @@ Item {
 
       Text {
         anchors.fill: passwordInput
-        text: root.authenticatingPassword ? "Checking…" : (root.failureMessage.length > 0 ? root.failureMessage : root.placeholderText)
+        text: root.fieldStatusText
         visible: passwordInput.text.length === 0
-        color: root.authenticatingPassword ? Color.lock.text : (root.failureMessage.length > 0 ? Color.lock.textError : Color.lock.placeholder)
+        color: root.errorState
+          ? Color.lock.textError
+          : ((root.authenticatingPassword || root.faceStatus.length > 0) ? Color.lock.text : Color.lock.placeholder)
         font.family: Style.font.family
         font.pixelSize: root.fieldFontSize
-        font.italic: !root.authenticatingPassword && root.failureMessage.length > 0
+        font.italic: !root.authenticatingPassword && root.errorState
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
