@@ -66,4 +66,35 @@ assert(
     lockViewBindings.filter(line => line.includes('root.faceStatus')).length === 1,
   'both views take face status, but only the live one is fed; the preview is inert'
 )
+
+// The status text hides as soon as the field has characters, and typing starts a
+// burst, so the glyph is the only face feedback left on that path.
+assert(
+  /property bool faceScanning: false/.test(lockViewQml),
+  'the view is told when the camera is running, not left to read it out of the wording'
+)
+
+const scanningBindings = serviceQml.match(/^ +faceScanning: .*$/gm) || []
+assert(
+  scanningBindings.length === 2 &&
+    scanningBindings.filter(line => line.includes('root.faceScanning')).length === 1,
+  'both views take the scanning flag, but only the live one is fed'
+)
+
+const faceIcon = lockViewQml.match(/Text \{\s*id: faceIcon([\s\S]*?)\n      \}/)
+assert(faceIcon, 'the lock view still draws a face indicator')
+assert(
+  /opacity: root\.faceScanning \? 1 : 0\.55/.test(faceIcon[1]),
+  'the glyph fades while the camera is idle and comes up full while it runs'
+)
+// tokyo-night ships a shell.lock.toml that flattens every lock color to one
+// value, so state carried by a color swap would be invisible there.
+assert(
+  /color: Color\.lock\.placeholder/.test(faceIcon[1]),
+  'the glyph keeps one color, so a theme that flattens the lock palette still shows the state'
+)
+assert(
+  !/errorState|failureMessage/.test(faceIcon[1]),
+  'the glyph never takes the error treatment, so a scan cannot read as a rejection'
+)
 JS

@@ -405,6 +405,7 @@ Item {
         backgroundVersion: root.backgroundVersion
         faceConfigured: root.faceConfigured
         faceStatus: root.faceStatus
+        faceScanning: root.faceScanning
         fingerprintConfigured: root.fingerprintConfigured
         authenticatingPassword: root.authenticatingPassword
         failureMessage: root.failureMessage
@@ -439,6 +440,7 @@ Item {
       backgroundVersion: root.backgroundVersion
       faceConfigured: root.faceConfigured
       faceStatus: ""
+      faceScanning: false
       fingerprintConfigured: root.fingerprintConfigured
       authenticatingPassword: false
       failureMessage: ""

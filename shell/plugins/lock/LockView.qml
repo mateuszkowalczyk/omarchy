@@ -12,6 +12,7 @@ Item {
   // Whatever the lock service last heard from the face backend, or its own
   // wording when the backend is quiet. Empty when no camera burst is running.
   property string faceStatus: ""
+  property bool faceScanning: false
   property bool fingerprintConfigured: false
   property bool authenticatingPassword: false
   property string failureMessage: ""
@@ -230,7 +231,14 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         visible: root.faceConfigured
         text: "󰱻"
+        // The glyph is the only face feedback that survives typing, since the
+        // status text hides as soon as the field has characters and typing is
+        // one of the things that starts a burst. Opacity rather than a second
+        // color, because a theme may flatten the whole lock palette to one
+        // value -- tokyo-night ships exactly that in `shell.lock.toml` -- and
+        // there a recolored glyph would say nothing.
         color: Color.lock.placeholder
+        opacity: root.faceScanning ? 1 : 0.55
         font.family: Style.font.family
         font.pixelSize: Math.round(root.fieldFontSize * 1.1)
         horizontalAlignment: Text.AlignHCenter
