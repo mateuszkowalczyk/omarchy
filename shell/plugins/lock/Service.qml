@@ -24,6 +24,11 @@ Item {
   property bool passwordPamConfigured: false
   property bool fingerprintConfigured: false
   property bool faceConfigured: false
+  // What the field says about the camera. Deliberately separate from
+  // `failureMessage`: that one paints the field red and reads as a rejected
+  // credential, and face runs on ambient activity rather than on a submission,
+  // so an empty room must not look like a failed unlock attempt.
+  property string faceStatus: ""
   property int faceAttemptCount: 0
   property double faceActivityEligibleAt: 0
   property bool lidClosedDuringLock: false
@@ -43,6 +48,20 @@ Item {
 
   readonly property bool locked: lockRequested || sessionLock.locked || sessionLock.secure
   readonly property bool authenticating: authenticatingPassword || fingerprintAuthenticating || faceAuthenticating
+
+  // A burst runs from its first attempt to its last, retry gaps included.
+  // `faceAuthenticating` drops between attempts, so anything gated on that
+  // instead flickers off and back on mid-scan.
+  readonly property bool faceScanning: faceAttemptCount > 0
+
+  // What may hold the display up, which is not the same as what counts as
+  // authenticating. Fingerprint is excluded because its PAM stays armed for the
+  // whole lock, so gating on it would keep the panel lit until unlock. Face is
+  // included because a burst is bounded and the user is waiting on it, and it
+  // can outlast the five second blank timer, so without this the panel goes
+  // black mid-scan.
+  readonly property bool blockingBlank: authenticatingPassword || faceScanning
+
   readonly property int faceAttemptLimit: 3
   readonly property int faceRetryDelay: 250
   readonly property int faceActivityDebounce: 750
@@ -128,6 +147,7 @@ Item {
     faceRetryTimer.stop()
     faceAttemptCount = 0
     faceAuthenticating = false
+    faceStatus = ""
 
     // PamContext.abort() emits no completion, so cleanup cannot enter the
     // failure path and accidentally restart the camera.
@@ -297,6 +317,12 @@ Item {
     }
     if (facePam.active || faceAuthenticating) return
 
+    // Only on the first attempt of a burst: a retry keeps whatever the backend
+    // last said rather than flicking back to our own wording. A backend that
+    // says nothing at all -- facelock's conversation text is a config option --
+    // leaves this standing for the whole burst, which is the point of having it.
+    if (faceAttemptCount === 0) faceStatus = "Looking for your face…"
+
     faceAttemptCount += 1
     faceAuthenticating = true
 
@@ -312,6 +338,7 @@ Item {
     }
     if (succeeded) {
       faceAttemptCount = 0
+      faceStatus = ""
       finishUnlock()
       return
     }
@@ -320,7 +347,11 @@ Item {
       faceRetryTimer.restart()
     } else {
       // Three failures stop here; a later key, click, or touch may try again.
+      // Say so once, at the end of the burst rather than after each attempt,
+      // and leave it up: it is the only thing that explains why the camera
+      // stopped, and the next activation replaces it.
       faceAttemptCount = 0
+      faceStatus = "Face not recognized"
     }
   }
 
@@ -373,6 +404,8 @@ Item {
         backgroundPath: root.backgroundPath
         backgroundVersion: root.backgroundVersion
         faceConfigured: root.faceConfigured
+        faceStatus: root.faceStatus
+        faceScanning: root.faceScanning
         fingerprintConfigured: root.fingerprintConfigured
         authenticatingPassword: root.authenticatingPassword
         failureMessage: root.failureMessage
@@ -406,6 +439,8 @@ Item {
       backgroundPath: root.backgroundPath
       backgroundVersion: root.backgroundVersion
       faceConfigured: root.faceConfigured
+      faceStatus: ""
+      faceScanning: false
       fingerprintConfigured: root.fingerprintConfigured
       authenticatingPassword: false
       failureMessage: ""
@@ -463,6 +498,13 @@ Item {
     id: facePam
     config: "omarchy-lock-face"
     user: root.userName
+
+    // Whatever the backend says during the scan drives the field, so no wording
+    // here is tied to one implementation. Guarded on an attempt being in flight
+    // so a late message cannot overwrite the burst's closing text.
+    onMessageChanged: {
+      if (root.faceAuthenticating && message) root.faceStatus = message
+    }
 
     // PamContext follows errors with completed(Error); one handler avoids
     // consuming the same failed attempt twice.
@@ -565,10 +607,10 @@ Item {
         root.armBlankTimer()
         return
       }
-      // Only a password check in flight should hold the display up. The
+      // Only a bounded check in flight should hold the display up. The
       // fingerprint PAM stays armed for the whole lock, so gating on
       // `authenticating` here would keep the panel lit until unlock.
-      if (root.lockRequested && !root.authenticatingPassword) root.runBlank()
+      if (root.lockRequested && !root.blockingBlank) root.runBlank()
     }
   }
 
@@ -625,9 +667,9 @@ Item {
     }
   }
 
-  onAuthenticatingPasswordChanged: {
+  onBlockingBlankChanged: {
     if (!lockRequested) return
-    if (authenticatingPassword) idleBlankTimer.stop()
+    if (blockingBlank) idleBlankTimer.stop()
     else armBlankTimer()
   }
 
